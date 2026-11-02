@@ -44,6 +44,7 @@ in `test-results/`. Lifecycle attachments record UI outcome and booking cleanup
 without tokens. Generated artifacts are ignored by Git.
 
 See [fixture design, safeguards and verification](docs/framework.md) for details.
+The [changelog](CHANGELOG.md) records the implementation changes and validation.
 Shared-demo outages or resets can fail a run; successful repetitions do not
 prove universal freedom from flakes.
 
