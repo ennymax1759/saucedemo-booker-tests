@@ -1,14 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { test as base } from '@playwright/test';
-import { cleanupOwnedBooking, type BookingOwnership, type BookingPayload } from '../support/bookingLifecycle';
+import assert from 'node:assert/strict';
+import { test as base } from './api.fixture';
+import { cleanupOwnedBooking, isBookingId, type BookingOwnership, type BookingPayload } from '../support/bookingLifecycle';
 
 interface OwnedBooking {
-  payload: BookingPayload;
-  ownership: BookingOwnership;
+  readonly payload: BookingPayload;
+  beginCreation(): void;
+  recordCreatedId(id: number): void;
 }
 
 export const test = base.extend<{ ownedBooking: OwnedBooking }>({
-  ownedBooking: [async ({ request }, use, testInfo) => {
+  ownedBooking: [async ({ request, apiAuth }, use, testInfo) => {
     const payload: BookingPayload = {
       firstname: 'Playwright',
       lastname: `Acceptance-${randomUUID()}`,
@@ -20,13 +22,24 @@ export const test = base.extend<{ ownedBooking: OwnedBooking }>({
     const ownership: BookingOwnership = {
       firstname: payload.firstname, lastname: payload.lastname, attempted: false,
     };
-    await use({ payload, ownership });
+    await use({
+      payload,
+      beginCreation() {
+        assert(!ownership.attempted, 'Booking creation must be dispatched only once per test');
+        ownership.attempted = true;
+      },
+      recordCreatedId(id) {
+        assert(ownership.attempted && isBookingId(id), 'Record a valid ID after beginning creation');
+        assert(ownership.id === undefined, 'A booking ID is already registered');
+        ownership.id = id;
+      },
+    });
 
     // Playwright resumes after use even when the body fails or times out.
     // Fixture teardown has its own deadline and preserves the body's error.
     let cleanup: object = { outcome: 'unresolved' };
     try {
-      cleanup = await cleanupOwnedBooking(request, ownership);
+      cleanup = await cleanupOwnedBooking(request, ownership, apiAuth.headers);
     } catch (error) {
       cleanup = { outcome: 'unresolved', reason: 'See the cleanup failure in the test report' };
       throw error;

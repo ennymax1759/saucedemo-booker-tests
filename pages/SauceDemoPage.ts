@@ -1,5 +1,16 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
+export interface CheckoutDetails {
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly postalCode: string;
+}
+
+export interface PricedProduct {
+  readonly name: string;
+  readonly price: number;
+}
+
 // Work in integer cents so floating-point rounding cannot mask a price error.
 export function priceInCents(text: string): number {
   const match = text.trim().match(/^\$(\d+)\.(\d{2})$/);
@@ -41,7 +52,15 @@ export class SauceDemoPage {
     return cents;
   }
 
-  async checkout(details: { firstName: string; lastName: string; postalCode: string }): Promise<void> {
+  async expectCartCount(count: number): Promise<void> {
+    await expect(this.page.getByTestId('shopping-cart-badge')).toHaveText(String(count));
+  }
+
+  async expectEmptyCart(): Promise<void> {
+    await expect(this.page.getByTestId('shopping-cart-badge'), 'Fresh session has no cart items').toHaveCount(0);
+  }
+
+  async checkout(details: CheckoutDetails): Promise<void> {
     await this.page.getByTestId('shopping-cart-link').click();
     await expect(this.page).toHaveURL(/\/cart\.html$/);
     await this.page.getByRole('button', { name: 'Checkout', exact: true }).click();
@@ -53,7 +72,7 @@ export class SauceDemoPage {
     await expect(this.page).toHaveURL(/\/checkout-step-two\.html$/);
   }
 
-  async expectOrderItems(products: { name: string; price: number }[]): Promise<void> {
+  async expectOrderItems(products: readonly PricedProduct[]): Promise<void> {
     await expect(this.page.getByTestId('inventory-item')).toHaveCount(products.length);
     for (const product of products) {
       const row = this.productRow(product.name);

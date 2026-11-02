@@ -1,11 +1,15 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import {
-  cleanupOwnedBooking,
+  cleanupOwnedBooking as cleanup,
   isBookingId,
   type BookingOwnership,
   type CleanupRequest,
 } from '../support/bookingLifecycle';
+
+const authHeaders = { Cookie: 'token=offline-token' };
+const cleanupOwnedBooking = (request: CleanupRequest, ownership: BookingOwnership) =>
+  cleanup(request, ownership, authHeaders);
 
 const owner: BookingOwnership = {
   firstname: 'Playwright', lastname: 'Acceptance-owned-run', attempted: true, id: 42,
@@ -71,7 +75,7 @@ void test('deletes only the verified owned booking and confirms its absence', as
     outcome: 'deleted', bookingId: 42, deletionStatus: 201, verificationStatus: 404,
   });
   const headers = fake.calls[1].options.headers as Record<string, string>;
-  assert.ok(headers.Authorization?.startsWith('Basic '), 'DELETE must authenticate');
+  assert.deepEqual(headers, authHeaders, 'DELETE uses the API auth fixture token');
   fake.verify();
 });
 
@@ -158,5 +162,19 @@ void test('a successful DELETE is insufficient if the booking remains readable',
   ]);
   await assert.rejects(cleanupOwnedBooking(fake.request, owner));
   assert.equal(fake.calls.length, 3);
+  fake.verify();
+});
+
+void test('DELETE transport failures do not leak token-bearing request diagnostics', async () => {
+  const fake = transport([
+    deletionPlan[0], { method: 'delete', url: '/booking/42', error: new Error('Cookie: token=offline-token') },
+  ]);
+  await assert.rejects(cleanupOwnedBooking(fake.request, owner), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /deletion outcome unresolved/);
+    assert.doesNotMatch(error.message, /offline-token|Cookie/);
+    return true;
+  });
+  assert.equal(fake.calls.length, 2);
   fake.verify();
 });

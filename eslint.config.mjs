@@ -23,7 +23,14 @@ export default tseslint.config(
       'playwright/no-focused-test': 'error',
       'playwright/no-skipped-test': 'error',
       'playwright/missing-playwright-await': 'error',
-      'playwright/expect-expect': ['error', { assertFunctionNames: ['shop.expectOrderItems', 'shop.expectItemTotal'] }],
+    },
+  },
+  {
+    files: ['tests/ui/checkout.spec.ts'],
+    rules: {
+      'playwright/expect-expect': ['error', {
+        assertFunctionNames: ['expectOrderItems', 'expectItemTotal', 'expectCartCount'],
+      }],
     },
   },
 );

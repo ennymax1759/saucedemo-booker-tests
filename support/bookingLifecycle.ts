@@ -43,6 +43,7 @@ export function isBookingId(value: unknown): value is number {
 export async function cleanupOwnedBooking(
   request: CleanupRequest,
   owner: BookingOwnership,
+  authHeaders: Readonly<Record<string, string>>,
 ): Promise<CleanupOutcome> {
   if (!owner.attempted) return { outcome: 'not-created' };
 
@@ -70,11 +71,11 @@ export async function cleanupOwnedBooking(
   assert.equal(record?.firstname, owner.firstname, 'Cleanup: first name ownership mismatch; refusing deletion');
   assert.equal(record?.lastname, owner.lastname, 'Cleanup: unique surname mismatch; refusing deletion');
 
-  const deleted = await request.delete(path, {
-    ...cleanupOptions,
-    // Documented public demo credentials, never included in lifecycle attachments.
-    headers: { Authorization: `Basic ${Buffer.from('admin:password123').toString('base64')}` },
-  });
+  const deleted = await request.delete(path, { ...cleanupOptions, headers: authHeaders })
+    .catch(() => {
+      // Playwright request errors may include headers: never expose the auth token.
+      throw new Error(`Cleanup: DELETE ${path} transport failed; deletion outcome unresolved`);
+    });
   assert.equal(deleted.status(), 201, `Cleanup: DELETE ${path} must return 201`);
   const afterDeletion = await request.get(path, cleanupOptions);
   assert.equal(afterDeletion.status(), 404, `Cleanup: GET ${path} must confirm deletion`);
