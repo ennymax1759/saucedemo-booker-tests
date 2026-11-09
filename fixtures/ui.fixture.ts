@@ -38,14 +38,19 @@ export const test = base.extend<UiFixtures & { loginCredentials: LoginCredential
 
     await use(shop);
 
-    // Attach execution summary to report for test diagnostics
-    await testInfo.attach('ui-lifecycle', {
-      body: JSON.stringify({
-        status: testInfo.status,
-        expectedStatus: testInfo.expectedStatus,
-        finalPath: new URL(page.url()).pathname,
-      }, null, 2),
-      contentType: 'application/json',
+    // Teardown: Attach execution summary and close the browser page cleanly
+    const finalPath = page.isClosed() ? 'page-already-closed' : new URL(page.url()).pathname;
+
+    await base.step('Close the browser page after the test', async () => {
+      await testInfo.attach('ui-lifecycle', {
+        body: JSON.stringify({
+          status: testInfo.status,
+          expectedStatus: testInfo.expectedStatus,
+          finalPath,
+        }, null, 2),
+        contentType: 'application/json',
+      });
+      await page.close();
     });
   },
 
