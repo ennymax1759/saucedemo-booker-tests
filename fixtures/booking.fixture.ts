@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { test as base } from './api.fixture';
 import { cleanupOwnedBooking, isBookingId, type BookingOwnership, type BookingPayload } from '../support/bookingLifecycle';
+import { BookingPayloadManager } from '../support/payloads/BookingPayloadManager';
+import { BookingApiHelper } from '../support/helpers/BookingApiHelper';
 
 export interface OwnedBooking {
   readonly payload: BookingPayload;
@@ -9,17 +10,24 @@ export interface OwnedBooking {
   recordCreatedId(id: number): void;
 }
 
-export const test = base.extend<{ ownedBooking: OwnedBooking }>({
+export const test = base.extend<{
+  ownedBooking: OwnedBooking;
+  bookingApi: BookingApiHelper;
+}>({
+  /**
+   * Service helper encapsulating REST API endpoints with attached authentication headers.
+   */
+  bookingApi: async ({ request, apiAuth }, use) => {
+    const helper = new BookingApiHelper(request, apiAuth.headers);
+    await use(helper);
+  },
+
+  /**
+   * Generates a uniquely owned booking payload with automatic teardown after the test.
+   */
   ownedBooking: [async ({ request, apiAuth }, use, testInfo) => {
-    // Generate a unique booking payload for the test
-    const payload: BookingPayload = {
-      firstname: 'Playwright',
-      lastname: `Acceptance-${randomUUID()}`,
-      totalprice: 245,
-      depositpaid: true,
-      bookingdates: { checkin: '2027-01-10', checkout: '2027-01-13' },
-      additionalneeds: 'Breakfast',
-    };
+    // Generate a unique booking payload using the payload manager
+    const payload = BookingPayloadManager.createDefault();
 
     const ownership: BookingOwnership = {
       firstname: payload.firstname,
@@ -58,3 +66,5 @@ export const test = base.extend<{ ownedBooking: OwnedBooking }>({
 });
 
 export { expect } from '@playwright/test';
+export { BookingPayloadManager } from '../support/payloads/BookingPayloadManager';
+export { BookingApiHelper } from '../support/helpers/BookingApiHelper';
