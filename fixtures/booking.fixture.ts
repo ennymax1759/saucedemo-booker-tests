@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test as base } from './api.fixture';
 import { cleanupOwnedBooking, isBookingId, type BookingOwnership, type BookingPayload } from '../support/bookingLifecycle';
 
-interface OwnedBooking {
+export interface OwnedBooking {
   readonly payload: BookingPayload;
   beginCreation(): void;
   recordCreatedId(id: number): void;
@@ -11,6 +11,7 @@ interface OwnedBooking {
 
 export const test = base.extend<{ ownedBooking: OwnedBooking }>({
   ownedBooking: [async ({ request, apiAuth }, use, testInfo) => {
+    // Generate a unique booking payload for the test
     const payload: BookingPayload = {
       firstname: 'Playwright',
       lastname: `Acceptance-${randomUUID()}`,
@@ -19,9 +20,14 @@ export const test = base.extend<{ ownedBooking: OwnedBooking }>({
       bookingdates: { checkin: '2027-01-10', checkout: '2027-01-13' },
       additionalneeds: 'Breakfast',
     };
+
     const ownership: BookingOwnership = {
-      firstname: payload.firstname, lastname: payload.lastname, attempted: false,
+      firstname: payload.firstname,
+      lastname: payload.lastname,
+      attempted: false,
     };
+
+    // Provide the booking object to the test body
     await use({
       payload,
       beginCreation() {
@@ -35,8 +41,7 @@ export const test = base.extend<{ ownedBooking: OwnedBooking }>({
       },
     });
 
-    // Playwright resumes after use even when the body fails or times out.
-    // Fixture teardown has its own deadline and preserves the body's error.
+    // Teardown: Automatically cleanup the created booking after the test completes
     let cleanup: object = { outcome: 'unresolved' };
     try {
       cleanup = await cleanupOwnedBooking(request, ownership, apiAuth.headers);

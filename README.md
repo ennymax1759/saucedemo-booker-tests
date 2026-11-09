@@ -1,94 +1,145 @@
-# Playwright UI and API assessment
+# Playwright Automation Framework (UI & API)
 
-Two TypeScript acceptance tests for [Sauce Demo](https://www.saucedemo.com/)
-and [Restful-booker](https://restful-booker.herokuapp.com/apidoc/index.html).
-Use Node.js 22.13+ on the 22.x line or Node.js 24+, with npm and internet access.
+A clean, modular, and maintainable Playwright test framework written in TypeScript. It covers end-to-end UI tests for [SauceDemo](https://www.saucedemo.com/) and API tests for [Restful-booker](https://restful-booker.herokuapp.com/).
 
-## Install and run
+The framework is designed around standard Playwright best practices—simple to review, easy to maintain, and straightforward to extend.
 
+---
+
+## Quick Start
+
+### 1. Install dependencies
 ```sh
 npm ci
 npx playwright install chromium
-npm run check
-npm test
 ```
 
-On Linux, install browser dependencies with `npx playwright install --with-deps chromium`.
-To watch the checkout, run `npm run test:ui -- --headed`.
+### 2. Configure credentials
+Copy the template or verify `env.local` in the project root:
+```sh
+cp env.local.example env.local
+```
+Ensure your credentials are set in `env.local`:
+```env
+SAUCEDEMO_USERNAME=standard_user
+SAUCEDEMO_PASSWORD=secret_sauce
+BOOKER_USERNAME=admin
+BOOKER_PASSWORD=password123
+```
+
+### 3. Run tests
+```sh
+# Run all tests (UI and API)
+npm test
+
+# Run only UI tests
+npm run test:ui
+
+# Run only API tests
+npm run test:api
+
+# Run lint, typechecks, and unit test validations
+npm run check
+
+# Open test report
+npm run report
+```
+
+---
+
+## Project Structure & Architecture
+
+```text
+├── pages/                  # Page Object Models (UI locators and page actions)
+│   └── SauceDemoPage.ts    # Grouped locators and actions for SauceDemo
+├── fixtures/               # Test setup, session reuse, and automatic teardown
+│   ├── ui.fixture.ts       # Pre-authenticated browser session and checkout data
+│   ├── api.fixture.ts      # Authentication token handling for API tests
+│   └── booking.fixture.ts  # Isolated booking data and automatic lifecycle cleanup
+├── tests/                  # End-to-end acceptance tests
+│   ├── ui/
+│   │   └── checkout.spec.ts  # End-to-end SauceDemo purchase flow
+│   └── api/
+│       └── booking.spec.ts   # Booking creation, retrieval, and validation
+├── support/                # Shared helpers and environment configuration
+│   ├── env.ts              # Loads credentials dynamically from env.local
+│   ├── apiResponses.ts     # Schema validators for API responses
+│   └── bookingLifecycle.ts # Cleanup and deletion logic for test-created bookings
+├── checks/                 # Framework stability and offline contract unit checks
+├── env.local               # Local environment credentials (ignored by Git)
+├── env.local.example       # Template for environment variables
+└── playwright.config.ts    # Central Playwright configuration
+```
+
+---
+
+## How to Review and Modify the Framework
+
+### 1. Page Object Model (`pages/SauceDemoPage.ts`)
+Locators are organized as `readonly` properties in the constructor and grouped logically by page section:
+* **Authentication:** `usernameInput`, `passwordInput`, `loginButton`
+* **Header & Navigation:** `cartLink`, `cartBadge`
+* **Inventory / Catalog:** `inventoryItems`, `productRow(name)`
+* **Checkout (Step 1):** `checkoutButton`, `firstNameInput`, `lastNameInput`, `postalCodeInput`, `continueButton`
+* **Checkout (Step 2):** `subtotalLabel`, `finishButton`
+* **Checkout (Complete):** `completeHeading`
+
+**To add a new element:**
+```ts
+// 1. Declare the locator at the top of SauceDemoPage
+readonly menuButton: Locator;
+
+// 2. Initialize it in the constructor
+this.menuButton = page.getByRole('button', { name: 'Open Menu' });
+
+// 3. Add an action method
+async openMenu(): Promise<void> {
+  await this.menuButton.click();
+}
+```
+
+### 2. Writing a New UI Test
+Import `test` from `fixtures/ui.fixture`. The `authenticatedShop` fixture automatically logs in using your `env.local` credentials and verifies an empty cart:
+```ts
+import { test } from '../../fixtures/ui.fixture';
+
+test('adds a product to the cart and verifies count', async ({ authenticatedShop: shop }) => {
+  await shop.addProduct('Sauce Labs Backpack');
+  await shop.expectCartCount(1);
+});
+```
+
+### 3. Writing a New API Test
+Import `test` from `fixtures/api.fixture` or `fixtures/booking.fixture`. The `apiAuth` fixture supplies an authenticated header for protected endpoints:
+```ts
+import { test, expect } from '../../fixtures/api.fixture';
+
+test('fetches booking IDs', async ({ request }) => {
+  const response = await request.get('/booking');
+  expect(response.status()).toBe(200);
+});
+```
+
+---
+
+## Key Best Practices Implemented
+
+1. **No Hardcoded Credentials:** All usernames and passwords live in `env.local` and are ignored by version control.
+2. **User-Facing Locators:** Prefers `getByRole`, `getByPlaceholder`, and `getByTestId` over brittle XPath or CSS selectors.
+3. **Resilient Assertions:** All assertions use Playwright's web-first `expect(locator)...` which automatically wait for the DOM to be ready without arbitrary sleeps.
+4. **Integer Cents Precision:** Product prices are calculated in integer cents to avoid floating-point rounding errors.
+5. **Automatic Cleanup:** API bookings created during tests are tracked and cleanly deleted during fixture teardown, preventing orphaned test data.
+
+---
+
+## Useful Commands
 
 | Command | Purpose |
-| --- | --- |
-| `npm run test:ui` | One Chromium checkout test |
-| `npm run test:api` | One API round-trip test; no browser required |
-| `npm run check` | Lint, strict types, offline framework checks and discovery |
-| `npm run test:list` | Discover the two acceptance tests without running them |
-| `npm run test:stability` | Five fresh runs per acceptance test, zero retries |
-| `npm run report` | Open the latest HTML report |
-
-## What the tests verify
-
-- **UI:** a fixture logs in as `standard_user` / `secret_sauce` in a fresh context
-  and verifies an empty cart. The test adds Backpack and Bike Light, checks both
-  checkout rows, compares Item total against the prices read from the page in
-  integer cents, and verifies order confirmation. No hardcoded prices or fixed waits.
-- **API:** an auth fixture obtains a token from `/auth`. The test uses the built-in
-  `request` fixture to create a unique booking and fetch it by ID, comparing every
-  field with deep equality. Teardown checks ownership, deletes the booking using
-  the token, and verifies 404, including after a test failure or timeout.
-- Page Objects handle UI interactions and assertions. Fixtures own login, fresh
-  checkout/booking data, authentication and teardown; business actions remain in
-  the tests. Both acceptance tests run against the real demos without mocks.
-
-Reports: `playwright-report/`, `artifacts/results.json`, and failure screenshots
-in `test-results/`. Lifecycle attachments record UI outcome and booking cleanup
-without tokens. Generated artifacts are ignored by Git.
-
-See [fixture design, safeguards and verification](docs/framework.md) for details.
-The [changelog](CHANGELOG.md) records the implementation changes and validation.
-Shared-demo outages or resets can fail a run; successful repetitions do not
-prove universal freedom from flakes.
-
-## Observed defects / questionable behaviours
-
-Both findings were reproduced on **2 November 2026** using Chromium and
-`standard_user` on Sauce Demo. These are proposed business expectations for a
-checkout flow; the demo may intentionally permit these behaviours. Neither is
-silently treated as a passing regression check in the two requested tests.
-
-### 1. Checkout succeeds with an empty cart
-
-**Severity:** Medium — an order confirmation can be produced without any items.
-
-**Steps:**
-
-1. Open a fresh browser context and log in with `standard_user` / `secret_sauce`.
-2. Do not add any products. Open the cart icon and click **Checkout**.
-3. Enter `Test`, `Shopper`, and `10001` in the checkout information fields.
-4. Click **Continue**, then **Finish**.
-
-**Expected:** Checkout is blocked for an empty cart and explains that at least
-one item is required.
-
-**Actual:** The overview contains no products and displays `Item total: $0`,
-`Tax: $0.00`, and `Total: $0.00`. Finish navigates to
-`/checkout-complete.html` and displays `Thank you for your order!`.
-
-### 2. Required checkout fields accept whitespace-only values
-
-**Severity:** Medium — an order can complete without usable recipient or
-postal information.
-
-**Steps:**
-
-1. Log in with `standard_user` / `secret_sauce` in a fresh browser context.
-2. Add **Sauce Labs Backpack**, open the cart, and click **Checkout**.
-3. Enter exactly three spaces in each of **First Name**, **Last Name**, and
-   **Zip/Postal Code**.
-4. Click **Continue**, then **Finish**.
-
-**Expected:** Trim leading/trailing whitespace and reject fields that are
-empty after trimming, with a visible validation error.
-
-**Actual:** Continue opens `/checkout-step-two.html`. Finish opens
-`/checkout-complete.html` and displays `Thank you for your order!`; no
-validation error blocks the whitespace-only details.
+| :--- | :--- |
+| `npm test` | Runs all UI and API tests |
+| `npm run test:ui` | Runs only UI tests in Chromium |
+| `npm run test:ui -- --headed` | Runs UI tests in headed browser mode |
+| `npm run test:api` | Runs API tests |
+| `npm run check` | Runs linting, typechecking, and contract unit tests |
+| `npm run test:stability` | Runs 5 repetitions per test with zero retries to confirm stability |
+| `npm run report` | Opens the Playwright HTML test report |

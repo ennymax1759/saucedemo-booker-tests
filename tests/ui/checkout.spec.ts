@@ -1,7 +1,11 @@
 import { test } from '../../fixtures/ui.fixture';
 import type { PricedProduct } from '../../pages/SauceDemoPage';
 
-test('checks out two products with an Item total equal to their displayed prices', async ({ authenticatedShop: shop, checkoutData }) => {
+test('checks out two products with an Item total equal to their displayed prices', async ({
+  authenticatedShop: shop,
+  checkoutData,
+}) => {
+  // Step 1: Add products to cart and capture their inventory prices
   const products = await test.step('Read inventory prices and add the two requested products', async () => {
     const selected: PricedProduct[] = [];
     for (const name of checkoutData.productNames) {
@@ -11,12 +15,14 @@ test('checks out two products with an Item total equal to their displayed prices
     return selected;
   });
 
+  // Step 2: Complete checkout form and verify items and subtotal
   await test.step('Verify both checkout rows and the Item total', async () => {
     await shop.checkout(checkoutData.customer);
     await shop.expectOrderItems(products);
     await shop.expectItemTotal(products.reduce((sum, product) => sum + product.price, 0));
   });
 
+  // Step 3: Finish order and assert confirmation message
   await test.step('Finish checkout and verify order confirmation', async () => {
     await shop.finishCheckout();
   });
