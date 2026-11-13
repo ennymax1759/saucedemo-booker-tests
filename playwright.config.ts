@@ -1,5 +1,35 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { parseEnv } from 'node:util';
+import { readPublishPolicy } from './integrations/testpilot-publish-policy.mjs';
+import { loadLocalTestpilotTarget, resolveTestpilotTarget } from './integrations/testpilot-targets.mjs';
 import './support/env';
+
+const listMappings = process.env.TESTPILOT_LIST_MAPPINGS === '1';
+const preflight = process.env.TESTPILOT_PREFLIGHT === '1';
+const listTests = process.argv.includes('--list');
+const publishToTestpilot = readPublishPolicy(process.env) !== 'local-only'
+  && process.env.TESTPILOT_SKIP_PUBLISH !== '1' && !listMappings && (!listTests || preflight);
+const target = publishToTestpilot ? resolveTestpilotTarget(__dirname, process.env, loadLocalTestpilotTarget(__dirname)) : undefined;
+const localCredentials = resolve(__dirname, '.env.testpilot');
+
+if (publishToTestpilot && !process.env.CI && !process.env.TESTPILOT_API_KEY?.trim()
+    && target?.usesLocalKey && existsSync(localCredentials)) {
+  const key = parseEnv(readFileSync(localCredentials, 'utf8')).TESTPILOT_API_KEY?.trim();
+  if (key) process.env.TESTPILOT_API_KEY = key;
+}
+
+export const testpilotReporter: ReporterDescription = [
+  './integrations/testpilot-playwright-reporter.mjs',
+  {
+    baseURL: target?.baseURL,
+    projectId: target?.projectId,
+    runId: target?.runId,
+    environment: target?.environment,
+    mapFile: process.env.TESTPILOT_MAP_FILE || './testpilot-map.json',
+  },
+];
 
 export default defineConfig({
   testDir: './tests',
@@ -10,8 +40,9 @@ export default defineConfig({
   workers: 1,
   timeout: 45_000,
   expect: { timeout: 10_000 },
-  reporter: [
+  reporter: preflight ? [testpilotReporter] : [
     ['list'],
+    ...(publishToTestpilot || listMappings ? [testpilotReporter] : []),
     ['html', { open: 'never' }],
     ['json', { outputFile: 'artifacts/results.json' }],
   ],

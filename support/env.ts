@@ -1,4 +1,4 @@
-import dotenv from 'dotenv';
+import { parseEnv } from 'node:util';
 import path from 'node:path';
 import fs from 'node:fs';
 
@@ -24,7 +24,9 @@ export function loadEnv(): void {
 
   for (const envPath of candidatePaths) {
     if (fs.existsSync(envPath)) {
-      dotenv.config({ path: envPath, override: false });
+      for (const [name,value] of Object.entries(parseEnv(fs.readFileSync(envPath, 'utf8')))) {
+        process.env[name] ??= value;
+      }
     }
   }
 }

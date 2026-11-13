@@ -6,3 +6,8 @@ artifacts/
 .env.local
 env.local
 *.local
+.env.testpilot
+testpilot-map.json
+testpilot-discovery.json
+testpilot.targets.json
+testpilot.local-target.json

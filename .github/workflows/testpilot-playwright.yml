@@ -1,0 +1,154 @@
+name: Playwright and Testpilot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/testpilot-playwright.yml
+      - checks/**
+      - fixtures/**
+      - integrations/**
+      - pages/**
+      - support/**
+      - tests/**
+      - package*.json
+      - playwright*.config.ts
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to the configured Testpilot workspace and enforce its release gate
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  TESTPILOT_SHARD_DIR: artifacts/shards
+  TESTPILOT_BUILD: ${{ github.run_id }}/${{ github.run_attempt }}
+  TESTPILOT_PROJECT_ID: ${{ inputs.publish && secrets.TESTPILOT_PROJECT_ID || '' }}
+  TESTPILOT_RUN_ID: ${{ inputs.publish && secrets.TESTPILOT_RUN_ID || '' }}
+  TESTPILOT_ENVIRONMENT: ${{ inputs.publish && vars.TESTPILOT_ENVIRONMENT || '' }}
+
+jobs:
+  shard:
+    if: github.ref == 'refs/heads/main' && github.repository == 'ennymax1759/saucedemo-booker-tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Capture shard
+        env:
+          SHARD: ${{ matrix.shard }}
+          SAUCEDEMO_USERNAME: standard_user
+          SAUCEDEMO_PASSWORD: secret_sauce
+          TESTPILOT_PUBLISH: required
+        run: npm test -- --fully-parallel --shard="$SHARD/2"
+      - name: Preserve the shard after test failures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-shard-${{ github.run_attempt }}-${{ matrix.shard }}
+          path: artifacts/shards/shard-${{ matrix.shard }}-of-2.*
+          if-no-files-found: error
+          retention-days: 7
+
+  merge:
+    if: ${{ always() && !cancelled() && !inputs.publish && github.ref == 'refs/heads/main' && github.repository == 'ennymax1759/saucedemo-booker-tests' }}
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: playwright-shard-${{ github.run_attempt }}-*
+          path: artifacts/shards
+          merge-multiple: true
+      - name: Build combined Playwright report
+        run: npm run testpilot:merge -- 2 --local-only
+      - name: Upload the combined Playwright report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-report-${{ github.run_attempt }}
+          path: playwright-report/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    if: ${{ always() && !cancelled() && inputs.publish && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && github.repository == 'ennymax1759/saucedemo-booker-tests' }}
+    needs: shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: testpilot-publication
+    env:
+      TESTPILOT_PUBLISH: required
+      TESTPILOT_RELEASE_GATE: '1'
+      TESTPILOT_PRIVATE_REPORT: '1'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: playwright-shard-${{ github.run_attempt }}-*
+          path: artifacts/shards
+          merge-multiple: true
+      - name: Check the publication target and case mappings
+        env:
+          TESTPILOT_MAPPING_JSON: ${{ secrets.TESTPILOT_MAPPING_JSON }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+          const caseId = /^(?:tc-[0-9a-f]{8}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+          const { TESTPILOT_PROJECT_ID, TESTPILOT_RUN_ID, TESTPILOT_MAPPING_JSON } = process.env;
+          if (![TESTPILOT_PROJECT_ID, TESTPILOT_RUN_ID].every(value => uuid.test(value))) {
+            throw new Error('Set the project and run UUIDs in the repository Actions secrets.');
+          }
+          let mappings;
+          try { mappings = JSON.parse(TESTPILOT_MAPPING_JSON); }
+          catch { throw new Error('Set the downloaded mapping JSON in TESTPILOT_MAPPING_JSON.'); }
+          if (!mappings || Array.isArray(mappings) || typeof mappings !== 'object' ||
+              !Object.values(mappings).every(value => typeof value === 'string' && caseId.test(value))) {
+            throw new Error('Testpilot mappings must be an object with one case ID per test reference.');
+          }
+          for (const value of new Set(Object.values(mappings))) console.log('::add-mask::' + value);
+          writeFileSync('testpilot-map.json', JSON.stringify(mappings), {mode: 0o600});
+          NODE
+          npm run testpilot:mappings
+      - name: Publish combined report and enforce readiness
+        env:
+          TESTPILOT_API_KEY: ${{ secrets.TESTPILOT_API_KEY }}
+        run: |
+          if [ -z "$TESTPILOT_API_KEY" ]; then
+            echo 'Configure TESTPILOT_API_KEY in the testpilot-publication environment.' >&2
+            exit 1
+          fi
+          npm run testpilot:merge -- 2
