@@ -151,4 +151,7 @@ jobs:
             echo 'Configure TESTPILOT_API_KEY in the testpilot-publication environment.' >&2
             exit 1
           fi
+          if npm run testpilot:merge -- 2; then exit 0; fi
+          if ! compgen -G 'artifacts/testpilot-pending/*.json' > /dev/null; then exit 1; fi
+          echo 'Retrying the queued Testpilot delivery without rerunning either shard.'
           npm run testpilot:merge -- 2

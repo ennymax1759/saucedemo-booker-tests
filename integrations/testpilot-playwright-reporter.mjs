@@ -602,7 +602,7 @@ export default class TestpilotReporter {
    if (target.issues.length) {
     const messages = target.issues.slice(0,8).map(issue=>{
      const reason = {
-      environment_mismatch:`environment mismatch (expected "${issue.expected}", configured "${context.build.environment}")`,
+      environment_mismatch:process.env.TESTPILOT_PRIVATE_REPORT==='1'?'environment mismatch':`environment mismatch (expected "${issue.expected}", configured "${context.build.environment}")`,
       configuration_mismatch:`browser configuration mismatch (expected "${issue.expected || 'default'}")`,
       manual_result:'existing manual result is protected',
       duplicate_mapping:'multiple tests map to the same case',
@@ -619,7 +619,8 @@ export default class TestpilotReporter {
   }
   const unmapped = context.unmapped.length ? ` ${context.unmapped.length} unmapped tests will stay in Playwright.` : '';
   const action = foundIssues?'Attempting to publish':'Ready to publish';
-  console.info((`[Testpilot] ${action} ${cases.length} mapped test(s) to ${target.run_name} · ${context.build.environment}.`+unmapped).replaceAll(context.token,'[redacted]'));
+  const destination = process.env.TESTPILOT_PRIVATE_REPORT==='1' ? '' : ` to ${target.run_name} · ${context.build.environment}`;
+  console.info((`[Testpilot] ${action} ${cases.length} mapped test(s)${destination}.`+unmapped).replaceAll(context.token,'[redacted]'));
   return target.receipt_details === true;
  }
 

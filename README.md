@@ -266,7 +266,9 @@ empty to use `CI`. In the `testpilot-publication` environment, set the secrets
 unattended key and the complete contents of the downloaded mapping file.
 
 The publication job checks mappings, verifies each shard, and enforces
-Testpilot's release gate. It does not upload workspace reports as GitHub
-artifacts. Open **Automation → Reports** in Testpilot to review the results.
+Testpilot's release gate. If a delivery is queued, the publication job retries
+it once using the same shard results. GitHub artifacts contain the public
+demo reports only. Open **Automation → Reports** in Testpilot to review the
+published results.
 If a shard needs to be rerun, choose **Re-run all jobs** so both shard reports
 are regenerated for the same attempt.
